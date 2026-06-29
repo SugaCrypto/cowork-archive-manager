@@ -127,10 +127,29 @@ def _search_in_base(base_path):
     """指定ベースパス配下でセッションファイルを探す。見つかったら (パス, True) を、なければ (None, ディレクトリ存在有無) を返す"""
     if not base_path.exists():
         return None, False
-    # 再帰的に local_*.json を探索
-    if any(base_path.glob("**/local_*.json")):
+    if any(iter_session_json_files(base_path)):
         return base_path, True
     return None, True
+
+
+def iter_session_json_files(base_path):
+    """消えた/アクセス不能なサブディレクトリを無視しながら local_*.json を列挙する"""
+    try:
+        base_path = Path(base_path)
+    except TypeError:
+        return
+
+    if not base_path.exists():
+        return
+
+    def _on_walk_error(_err):
+        # Claude Desktop 側で消えた作業ディレクトリやアクセス不能な場所はスキップする
+        return
+
+    for root, _, files in os.walk(base_path, onerror=_on_walk_error):
+        for name in files:
+            if name.startswith("local_") and name.endswith(".json"):
+                yield Path(root) / name
 
 
 def find_sessions_dir():
@@ -186,7 +205,7 @@ def load_sessions():
         return [], diag
     diag["sessions_dir"] = str(sessions_dir)
     sessions = []
-    for json_file in sessions_dir.glob("**/local_*.json"):
+    for json_file in iter_session_json_files(sessions_dir):
         try:
             with open(json_file) as f:
                 data = json.load(f)
